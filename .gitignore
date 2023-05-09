@@ -1,0 +1,10 @@
+venv/
+.venv/
+tmp/
+.idea/
+*.iml
+*.keras
+*.h5
+*.csv
+.vscode/
+__pycache__/

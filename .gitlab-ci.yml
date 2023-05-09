@@ -1,0 +1,37 @@
+image: gcr.io/kaniko-project/executor:debug
+
+stages:
+  - release
+  - release-version
+
+before_script:
+  - mkdir -p /kaniko/.docker
+  - echo "$CONFIG_JSON" > "/kaniko/.docker/config.json"
+
+release:
+  stage: release
+  tags:
+    - k8s
+  variables:
+    IMAGE_NAME: docker.nexus.dataspac.es/federated-learning/tf-backend
+    IMAGE_TAG: $CI_COMMIT_REF_NAME
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile -d $IMAGE_NAME:$IMAGE_TAG -d $IMAGE_NAME:$IMAGE_TAG-$(date +"%Y%d%m%H%M")
+  except:
+    variables:
+      - $RELEASE_VERSION
+
+release_version:
+  stage: release-version
+  tags:
+    - k8s
+  variables:
+    IMAGE_NAME: docker.nexus.dataspac.es/federated-learning/tf-backend
+    IMAGE_TAG: $RELEASE_VERSION
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile -d $IMAGE_NAME:$IMAGE_TAG
+  only:
+    refs:
+      - master
+    variables:
+      - $RELEASE_VERSION

@@ -1,0 +1,7 @@
+venv/
+tmp/
+.idea/
+*.iml
+*.keras
+*.h5
+*.csv
