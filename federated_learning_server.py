@@ -66,7 +66,7 @@ class FederatedLearningServerHandler:
         )
 
     async def common_model(self, _: Request) -> web.StreamResponse:
-        return web.FileResponse(f"{self._tmp_models}/full_model.h5")
+        return web.FileResponse(f"{self._tmp_models}/full_model.json")
 
     async def initialize(self, request: Request) -> web.Response:
         self._params = await request.json()
@@ -74,7 +74,7 @@ class FederatedLearningServerHandler:
         self._rounds = self._params["rounds"]
         self._state = FederatedLearningState.INITIALIZED
         self._params = helper_server.initialize(
-            f"{self._tmp_models}/common_model.h5", **self._params
+            f"{self._tmp_models}/common_model.json", **self._params
         )
         self._params["parties"] = len(self._workers)
         self._params["name"] = f'{self._params["key"]}-cnn-{randrange(100000,999999)}'
@@ -86,35 +86,21 @@ class FederatedLearningServerHandler:
     async def train(self, request: Request) -> web.Response:
         self._state = FederatedLearningState.WAITING
 
-        # if request.body_exists:
-        #     logger.info('Received input weights, start training')
-        #     with open(f'{self._tmp_models}/common_model.h5', 'w+') as f:
-        #         f.write('')
-
-        #     async with aiofiles.open(f'{self._tmp_models}/common_model.h5', "ba+") as f:
-        #         async for data in request.content.iter_chunked(10240):
-        #             await f.write(data)
-        # else:
-        #     logger.info('Start training with empty weights')
-        logger.info("Start training with empty weights")
+        logger.info("Start training")
 
         asyncio.run_coroutine_threadsafe(self.share_model(), self._loop)
         return web.Response()
 
     async def receive_model(self, request: Request) -> web.Response:
         worker = request.headers["Forward-Sender"]
-        with open(
-            f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.h5',
-            "w+",
-        ) as f:
-            f.write("")
+        file_path = f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.json'
+        with open(file_path, "w+") as f:
+            json.dump("", f)
 
-        async with aiofiles.open(
-            f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.h5',
-            "ba+",
-        ) as f:
+        async with aiofiles.open(file_path, "a+") as f:
+            # TODO: might need to change something here, as we are writing a simple json
             async for data in request.content.iter_chunked(10240):
-                await f.write(data)
+                await json.dump(data, f)
 
         logger.info(f"Received model from {worker}")
         self._received_models += 1
@@ -146,7 +132,7 @@ class FederatedLearningServerHandler:
             for worker in self._workers:
                 async with session.post(
                     f"{data_app_url}/model",
-                    data=open(f"{self._tmp_models}/common_model.h5", "rb"),
+                    data=json.load(open(f"{self._tmp_models}/common_model.json")),
                     headers={"Forward-To": worker},
                 ) as response:
                     if response.status > 299:
@@ -173,19 +159,21 @@ class FederatedLearningServerHandler:
     async def calculate_average(self) -> None:
         self._state = FederatedLearningState.AVERAGING
         files = [
-            f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.h5'
+            (f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.json')
             for worker in self._workers
         ]
-        output = f"{self._tmp_models}/common_model.h5"
-        full_output = f"{self._tmp_models}/full_model.h5"
+        output = f"{self._tmp_models}/common_model.json"
+        full_output = f"{self._tmp_models}/full_model.json"
 
         self._current_round += 1
         self._received_models = 0
         logger.info(f"Calculating average of {files} into {output}")
 
+        # TODO: change averaging
         helper_server.average_weights(output, full_output, files)
 
-        if self._current_round >= self._rounds:
+        # Stop when maximum number of iterations or convergence criterion is achieved
+        if (self._current_round > self._params["max_iter"]) or (self._params["change"] <= self._params["epsilon"]):
             await self.share_finish()
         else:
             await self.share_model()

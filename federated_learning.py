@@ -33,7 +33,7 @@ class FederatedLearningState(str, Enum):
 
 class FederatedLearningHandler:
     _state = FederatedLearningState.NONE
-    _tmp_model: str = "./tmp/intermediate_model.h5"
+    _tmp_model: str = "./tmp/intermediate_model.json"
     _params: Dict[str, Any] = {}
     _status = []
     _round = -1
@@ -47,6 +47,7 @@ class FederatedLearningHandler:
     async def status(self, request: Request) -> web.Response:
         return web.json_response({"state": self._state, "status": self._status})
 
+    # TODO: do we need to change something here?
     async def initialize(self, request: Request) -> web.Response:
         self._params = await request.json()
         self._state = FederatedLearningState.INITIALIZED
@@ -56,6 +57,7 @@ class FederatedLearningHandler:
         helper_worker.initialize(**self._params)
         return web.Response()
 
+    # TODO: do we need to change something here?
     async def train(self, request: Request) -> web.Response:
         self._state = FederatedLearningState.TRAINING
         with open(self._tmp_model, "w+") as f:
@@ -100,16 +102,18 @@ class FederatedLearningHandler:
         logger.info(self._params)
         logger.info(self._tmp_model)
 
+        # TODO: make sure to adjust reading of centroids from json file
         train_result = helper_worker.train(
             self._params["key"],
-            starting_weights=self._tmp_model,
-            epochs=self._params["epochs"],
+            starting_centroids=self._tmp_model,
+            k=self._params["k"],
             callback=self.share_status,
-            batch_size=self._params.get("batch_size", 8),
-            validation_split=self._params.get("validation_split", 0.1),
+            epsilon=self._params["epsilon"],
+            max_iter=self._params["max_iter"],
+            columns=self._params["columns"]
         )
         self._round += 1
-        await self.share_model(f"weights.{self._params['key']}.h5")
+        await self.share_model(f"centroids.{self._params['key']}.json")
 
 
 if __name__ == "__main__":

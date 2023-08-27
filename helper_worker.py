@@ -2,19 +2,16 @@ import logging
 from typing import Optional, Any, Dict, Callable, Tuple
 
 import json
-import keras.models
-import keras.callbacks
 import pandas as pd
 
 from numpy import ndarray
-import tensorflow as tf
 import numpy as np
 
 logger = logging.getLogger("helper_worker_logger")
 
 data: Optional[ndarray] = None
 labels: Optional[ndarray] = None
-model: Optional[keras.Model] = None
+# model: Optional[keras.Model] = None
 unique_labels: Optional[int] = None
 array_features_dict: dict = {}
 
@@ -28,12 +25,13 @@ def initialize(**kwargs):
 
     key = kwargs.get("key")
     model_input = kwargs.get("model")
-    optimizer_input = kwargs.get("optimizer")
-    label_column = kwargs.get("label_column", "label")
 
     print(f"Reading data from {key}.csv")
     data = pd.read_csv(f"{key}.csv")
     print(f"Data shape: {data.shape}")
+
+    # TODO: prepare data here
+    # Initialise centroids?
 
     features_dict = data.copy()
     for name, column in features_dict.items():
@@ -80,6 +78,8 @@ def train(
         print("Loading weights")
         model.load_weights(starting_weights)
     print("Setup callback")
+
+    # TODO: while loop here
 
     class KerasCallback(keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
