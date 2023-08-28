@@ -40,7 +40,7 @@ def initialize(model_centroids: str, **kwargs) -> Dict[str, Any]:
     # Save initial centroids
     print("Saving initial centroids")
     with open(model_centroids, "w+") as f:
-        json.dump(kwargs["centroids"], f)
+        json.dump({"centroids": kwargs["centroids"]}, f)
 
     return kwargs
 
@@ -80,8 +80,8 @@ def average_weights(model_centroids: str, full_model: str, files: List[str], k: 
     # Save results
     print("Saving average centroids")
     with open(model_centroids, "w+") as f:
-        json.dump(centroids, f)
+        json.dump({"centroids": centroids}, f)
     with open(full_model, "w+") as f:
-        json.dump(centroids, f)
+        json.dump({"centroids": centroids}, f)
 
     return change

@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from pandas.api.types import is_string_dtype
 from scipy.spatial import distance
-from typing import Optional, Any, Dict, Callable, Tuple, List
+from typing import Optional, List
 
 logger = logging.getLogger("helper_worker_logger")
 data: Optional[np.ndarray] = None
@@ -69,8 +69,7 @@ def train(key: str, starting_centroids: str, k: int, columns: list):
         for column in columns:
             centroid.append(dfc[column].mean())
         centroids.append(centroid)
-    centroids = {"centroids": centroids}
 
     print("Saving local centroids")
     with open(f"centroids.{key}.json", "w+") as f:
-        json.dump(centroids, f)
+        json.dump({"centroids": centroids}, f)
