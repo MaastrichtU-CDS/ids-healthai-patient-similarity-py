@@ -169,8 +169,7 @@ class FederatedLearningServerHandler:
         self._received_models = 0
         logger.info(f"Calculating average of {files} into {output}")
 
-        # TODO: change averaging
-        helper_server.average_weights(output, full_output, files)
+        self._params["change"] = helper_server.average_weights(output, full_output, files, self._params["k"])
 
         # Stop when maximum number of iterations or convergence criterion is achieved
         if (self._current_round > self._params["max_iter"]) or (self._params["change"] <= self._params["epsilon"]):
