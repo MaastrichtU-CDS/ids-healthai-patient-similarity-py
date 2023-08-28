@@ -98,7 +98,7 @@ class FederatedLearningServerHandler:
             json.dump("", f)
 
         async with aiofiles.open(file_path, "a+") as f:
-            # TODO: might need to change something here, as we are writing a simple json
+            # TODO: might need to change something here
             async for data in request.content.iter_chunked(10240):
                 await json.dump(data, f)
 
