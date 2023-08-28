@@ -1,107 +1,76 @@
-import logging
-from typing import Optional, Any, Dict, Callable, Tuple
-
+import re
 import json
+import logging
 import pandas as pd
-
-from numpy import ndarray
 import numpy as np
+from pandas.api.types import is_string_dtype
+from scipy.spatial import distance
+from typing import Optional, Any, Dict, Callable, Tuple, List
 
 logger = logging.getLogger("helper_worker_logger")
-
-data: Optional[ndarray] = None
-labels: Optional[ndarray] = None
-# model: Optional[keras.Model] = None
-unique_labels: Optional[int] = None
-array_features_dict: dict = {}
+data: Optional[np.ndarray] = None
+centroids: List = None
 
 
 def initialize(**kwargs):
     global data
-    global labels
-    global model
-    global unique_labels
-    global array_features_dict
+    global centroids
 
     key = kwargs.get("key")
-    model_input = kwargs.get("model")
+    centroids = kwargs.get("centroids")
 
     print(f"Reading data from {key}.csv")
     data = pd.read_csv(f"{key}.csv")
     print(f"Data shape: {data.shape}")
 
-    # TODO: prepare data here
-    # Initialise centroids?
+    # Select columns and drop rows with NaNs
+    columns = kwargs.get("columns")
+    data = data[columns].dropna(how='any')
 
-    features_dict = data.copy()
-    for name, column in features_dict.items():
-        dtype = column.dtype
-        if dtype == object:
-            features_dict[name] = features_dict[name].fillna("")
+    # Convert from categorical to numerical TNM, if necessary, values such as
+    # Tx, Nx, Mx are converted to -1
+    for col in columns:
+        if is_string_dtype(data[col]):
+            data[col] = data[col].apply(lambda x: re.compile(r'\d').findall(x))
+            data[col] = data[col].apply(lambda x: int(x[0]) if len(x) != 0 else -1)
 
-    labels = data[label_column]
-    labels = pd.get_dummies(labels)
-
-    array_features_dict = {
-        name: np.array(value) for name, value in features_dict.items()
-    }
-
-    optimizer = tf.keras.optimizers.deserialize(optimizer_input)
-    loss = kwargs.get("loss", "categorical_crossentropy")
-    metrics = kwargs.get("metrics", ["accuracy"])
-
-    if model_input:
-        try:
-            model = tf.keras.models.model_from_json(model_input)
-        except TypeError:
-            model_input = json.dumps(model_input)
-            model = tf.keras.models.model_from_json(model_input)
-    model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
+    print("Data has been prepared for clustering")
 
 
-def train(
-    key: str,
-    starting_weights: str,
-    epochs: int,
-    callback: Callable[[Dict[str, Any]], None],
-    batch_size=8,
-    validation_split=0.1,
-) -> Tuple[str, str, str, str]:
+def train(key: str, starting_centroids: str, k: int, columns: list):
     global data
-    global labels
-    global model
-    global features_dict
-    print(
-        f"Start training ({key}, {starting_weights}, {epochs}, {batch_size}, {validation_split})"
-    )
-    if starting_weights is not None:
-        print("Loading weights")
-        model.load_weights(starting_weights)
-    print("Setup callback")
+    global centroids
 
-    # TODO: while loop here
+    print("Start clustering...")
+    if starting_centroids is not None:
+        print("Loading centroids")
+        centroids = json.load(open(starting_centroids))['centroids']
 
-    class KerasCallback(keras.callbacks.Callback):
-        def on_epoch_end(self, epoch, logs=None):
-            print(f"End epoch {epoch}; {logs}")
-            callback({**logs, "epoch": epoch})
+    print("Calculating distance matrix")
+    distances = np.zeros([len(data), k])
+    for i in range(len(data)):
+        for j in range(k):
+            xi = list(data.iloc[i].values)
+            xj = centroids[j]
+            distances[i, j] = distance.euclidean(xi, xj)
 
-    print("Start fitting")
-    print(data)
-    print(features_dict)
-    try:
-        model.fit(
-            features_dict,
-            labels,
-            verbose=2,
-            callbacks=[KerasCallback()],
-            batch_size=batch_size,
-            epochs=epochs,
-            validation_split=validation_split,
-        )
-        print("Finished fitting")
+    print("Calculating local membership matrix")
+    membership = np.zeros([len(data), k])
+    for i in range(len(data)):
+        j = np.argmin(distances[i])
+        membership[i, j] = 1
 
-        model.save_weights(f"weights.{key}.h5")
-    except Exception as e:
-        logger.exception(e)
-    return True
+    print("Generating local cluster centroids")
+    centroids = []
+    for i in range(k):
+        members = membership[:, i]
+        dfc = data.iloc[members == 1]
+        centroid = []
+        for column in columns:
+            centroid.append(dfc[column].mean())
+        centroids.append(centroid)
+    centroids = {"centroids": centroids}
+
+    print("Saving local centroids")
+    with open(f"centroids.{key}.json", "w+") as f:
+        json.dump(centroids, f)

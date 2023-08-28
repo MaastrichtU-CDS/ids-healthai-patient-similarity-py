@@ -1,13 +1,14 @@
-import asyncio
-import logging
 import os
+import json
+import asyncio
+import aiofiles
+import requests
+import logging
+
 from enum import Enum
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict
-
-import aiofiles
-import requests
 from aiohttp import web, ClientSession
 from aiohttp.abc import Request
 
@@ -47,7 +48,6 @@ class FederatedLearningHandler:
     async def status(self, request: Request) -> web.Response:
         return web.json_response({"state": self._state, "status": self._status})
 
-    # TODO: do we need to change something here?
     async def initialize(self, request: Request) -> web.Response:
         self._params = await request.json()
         self._state = FederatedLearningState.INITIALIZED
@@ -57,15 +57,15 @@ class FederatedLearningHandler:
         helper_worker.initialize(**self._params)
         return web.Response()
 
-    # TODO: do we need to change something here?
     async def train(self, request: Request) -> web.Response:
         self._state = FederatedLearningState.TRAINING
         with open(self._tmp_model, "w+") as f:
-            f.write("")
+            json.dump("", f)
 
-        async with aiofiles.open(self._tmp_model, "ba+") as f:
+        async with aiofiles.open(self._tmp_model, "a+") as f:
+            # TODO: something probably need to be changed here
             async for data in request.content.iter_chunked(10240):
-                await f.write(data)
+                await json.dump(data, f)
 
         logger.info("Received input model, start training")
         asyncio.run_coroutine_threadsafe(self.train_model(), self._loop)
@@ -80,7 +80,7 @@ class FederatedLearningHandler:
         self._state = FederatedLearningState.WAITING
         async with ClientSession() as session:
             async with session.post(
-                f"{data_app_url}/model", data=open(file, "rb")
+                f"{data_app_url}/model", data=json.load(open(file))
             ) as response:
                 if response.status > 299:
                     logger.error(f"Error in sharing model: {response.status}")
@@ -102,14 +102,10 @@ class FederatedLearningHandler:
         logger.info(self._params)
         logger.info(self._tmp_model)
 
-        # TODO: make sure to adjust reading of centroids from json file
-        train_result = helper_worker.train(
+        helper_worker.train(
             self._params["key"],
             starting_centroids=self._tmp_model,
             k=self._params["k"],
-            callback=self.share_status,
-            epsilon=self._params["epsilon"],
-            max_iter=self._params["max_iter"],
             columns=self._params["columns"]
         )
         self._round += 1
