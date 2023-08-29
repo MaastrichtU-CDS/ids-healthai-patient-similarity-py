@@ -11,7 +11,9 @@ import requests
 from aiohttp import web, ClientSession
 from aiohttp.abc import Request
 
-import helper_worker
+import helper_nn_worker
+import helper_kmeans_worker
+
 from dataset_handler import DataSetHandler
 
 data_app_url = os.environ.get("DATA_APP_URL", "https://httpbin.org/anything")
@@ -53,7 +55,10 @@ class FederatedLearningHandler:
         self._round = 0
         logger.info("Initialized Federated Learning")
         logger.info(self._params)
-        helper_worker.initialize(**self._params)
+        if self._params.get("type", "") == "k-means":
+            helper_kmeans_worker.initialize(**self._params)
+        else:
+            helper_nn_worker.initialize(**self._params)
         return web.Response()
 
     async def train(self, request: Request) -> web.Response:
@@ -100,14 +105,24 @@ class FederatedLearningHandler:
         logger.info(self._params)
         logger.info(self._tmp_model)
 
-        train_result = helper_worker.train(
-            self._params["key"],
-            starting_weights=self._tmp_model,
-            epochs=self._params["epochs"],
-            callback=self.share_status,
-            batch_size=self._params.get("batch_size", 8),
-            validation_split=self._params.get("validation_split", 0.1),
-        )
+        if self._params.get("type", "") == "k-means":
+            train_result = helper_kmeans_worker.train(
+                self._params["key"],
+                starting_weights=self._tmp_model,
+                epochs=self._params["epochs"],
+                callback=self.share_status,
+                batch_size=self._params.get("batch_size", 8),
+                validation_split=self._params.get("validation_split", 0.1),
+            )
+        else:
+            train_result = helper_nn_worker.train(
+                self._params["key"],
+                starting_weights=self._tmp_model,
+                epochs=self._params["epochs"],
+                callback=self.share_status,
+                batch_size=self._params.get("batch_size", 8),
+                validation_split=self._params.get("validation_split", 0.1),
+            )
         self._round += 1
         await self.share_model(f"weights.{self._params['key']}.h5")
 

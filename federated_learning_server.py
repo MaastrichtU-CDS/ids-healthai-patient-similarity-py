@@ -12,7 +12,8 @@ from aiohttp import web, ClientSession
 from aiohttp.abc import Request
 from random import randrange
 
-import helper_server
+import helper_nn_server
+import helper_kmeans_server
 
 data_app_url = os.environ.get("DATA_APP_URL", "https://httpbin.org/anything")
 debug_sleep_time = int(os.environ.get("DEBUG_SLEEP_TIME", "10"))
@@ -73,9 +74,14 @@ class FederatedLearningServerHandler:
         self._workers = self._params.pop("workers")
         self._rounds = self._params["rounds"]
         self._state = FederatedLearningState.INITIALIZED
-        self._params = helper_server.initialize(
-            f"{self._tmp_models}/common_model.h5", **self._params
-        )
+        if self._params.get("type", "") == "k-means":
+            self._params = helper_kmeans_server.initialize(
+                f"{self._tmp_models}/common_model.h5", **self._params
+            )
+        else:
+            self._params = helper_nn_server.initialize(
+                f"{self._tmp_models}/common_model.h5", **self._params
+            )
         self._params["parties"] = len(self._workers)
         self._params["name"] = f'{self._params["key"]}-cnn-{randrange(100000,999999)}'
         logger.info("Initialized Federated Learning")
@@ -183,8 +189,11 @@ class FederatedLearningServerHandler:
         self._received_models = 0
         logger.info(f"Calculating average of {files} into {output}")
 
-        helper_server.average_weights(output, full_output, files)
-
+        if self._params.get("type", "") == "k-means":
+            helper_kmeans_server.average_weights(output, full_output, files)
+        else:
+            helper_nn_server.average_weights(output, full_output, files)
+        
         if self._current_round >= self._rounds:
             await self.share_finish()
         else:
