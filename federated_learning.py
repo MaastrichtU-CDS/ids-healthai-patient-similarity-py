@@ -56,8 +56,10 @@ class FederatedLearningHandler:
         logger.info("Initialized Federated Learning")
         logger.info(self._params)
         if self._params.get("type", "") == "k-means":
+            logger.info("Initializing k-means")
             helper_kmeans_worker.initialize(**self._params)
         else:
+            logger.info("Initializing neural network (default)")
             helper_nn_worker.initialize(**self._params)
         return web.Response()
 
@@ -106,6 +108,7 @@ class FederatedLearningHandler:
         logger.info(self._tmp_model)
 
         if self._params.get("type", "") == "k-means":
+            logger.info("Training k-means")
             train_result = helper_kmeans_worker.train(
                 self._params["key"],
                 starting_weights=self._tmp_model,
@@ -115,6 +118,7 @@ class FederatedLearningHandler:
                 validation_split=self._params.get("validation_split", 0.1),
             )
         else:
+            logger.info("Training neural network (default)")
             train_result = helper_nn_worker.train(
                 self._params["key"],
                 starting_weights=self._tmp_model,
