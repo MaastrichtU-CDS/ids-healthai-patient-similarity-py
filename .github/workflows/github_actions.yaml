@@ -58,7 +58,7 @@ jobs:
       - name: Build container for not main
         id: docker_build
         uses: docker/build-push-action@v2
-        if: steps.extract_branch.outputs.branch != 'main'
+        if: steps.extract_branch.outputs.branch != 'main' && && github.ref_type == 'branch'
         with:
           context: ./
           push: true
@@ -66,13 +66,13 @@ jobs:
       - name: Build container for main
         id: docker_build_main
         uses: docker/build-push-action@v2
-        if: steps.extract_branch.outputs.branch == 'main'
+        if: steps.extract_branch.outputs.branch == 'main' && github.ref_type == 'branch'
         with:
           context: ./
           push: true
           tags: ghcr.io/${{ env.REPO }}:${{ steps.extract_branch.outputs.branch }}, ghcr.io/${{ env.REPO }}:latest
       - name: Build container for tag
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.ref_type == 'tag'
         uses: docker/build-push-action@v2
         with:
           context: ./
