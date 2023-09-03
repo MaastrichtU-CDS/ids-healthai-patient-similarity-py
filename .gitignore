@@ -3,5 +3,8 @@ venv/
 tmp/
 .idea/
 *.csv
+*.iml
+*.keras
+*.h5
 .vscode/
 __pycache__/

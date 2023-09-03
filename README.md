@@ -1,7 +1,8 @@
 # Patient similarity backend
 
 This repository contains the logic for the Federated Learning implementation 
-through IDS for patient similarity with TNM data. 
+through IDS for patient similarity with TNM data. Neural net training should also be possible :construction:.
+Different algorithm to collect stastics should be feasible to implement. This is a proof-of-concept.
 
 The code in this repository needs the [Federated Learning Data App](https://gitlab.com/tno-tsg/data-apps/federated-learning) 
 combined with a [TSG Core Container](https://gitlab.com/tno-tsg/core-container) to work. 
@@ -15,7 +16,7 @@ providing the following configuration for a worker:
 containers:
   # ... Federated Learning data app config here
   - type: helper
-    image: ghcr.io/maastrichtu-cds/ids-healthai-patient-similarity-py:latest 
+    image: ghcr.io/maastrichtu-cds/ids-healthai-patient-similarity-py:demo 
     name: patient-similarity-backend
     command: ["python3"]
     args: ["federated_learning.py"]

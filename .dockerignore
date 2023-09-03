@@ -1,5 +1,9 @@
 .venv/
+venv/
 tmp/
 .idea/
+*.iml
+*.keras
+*.h5
 *.csv
 __pycache__/

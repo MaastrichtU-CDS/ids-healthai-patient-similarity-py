@@ -2,19 +2,18 @@ import asyncio
 import json
 import logging
 import os
+import traceback
 from enum import Enum, auto
-from pathlib import Path
 from threading import Thread
 
-import aiofiles
-import re
-from aiohttp import web, ClientSession
+from aiohttp import ClientSession, web
 from aiohttp.abc import Request
-from random import randrange
 
-import helper_server
+from algos_server.algo import FederatedServerAlgo
+from algos_server.kmeans import KmeansFederatedServerAlgo
+from algos_server.nn import NNFederatedServerAlgo
 
-data_app_url = os.environ.get("DATA_APP_URL", "https://httpbin.org/anything")
+
 debug_sleep_time = int(os.environ.get("DEBUG_SLEEP_TIME", "10"))
 
 
@@ -22,12 +21,21 @@ def start_background_loop(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
+# will be passed to run_coroutine_threadsafe as a callback, useful for debugging
+def done_callback(future: asyncio.Future) -> None:
+    """Callback for run_coroutine_threadsafe. Logs exceptions from scheduled coroutines."""
+    try:
+        result = future.result()
+        # TODO: what does this print?
+        logger.debug("Scheduled coroutine finished: %s", result)
+    except Exception as exception:
+        logger.error("Caught exception from scheduled coroutine: %s", exception)
+        traceback.print_exc()
 
 class FederatedLearningState(Enum):
     """
     State enum for indicating the state of the Federated Learning server
     """
-
     NONE = auto()
     INITIALIZED = auto()
     WAITING = auto()
@@ -40,24 +48,22 @@ class FederatedLearningServerHandler:
     Federated Learning Server Handler
     """
 
-    _state = FederatedLearningState.NONE
-    _tmp_models = "./tmp"
-    _params: dict = {}
-    _workers: list = []
-    _rounds: int = 0
-    _current_round: int = 0
-    _received_models: int = 0
-    _file_pattern = re.compile("[\\W_]+")
-
     def __init__(self):
-        Path(self._tmp_models).mkdir(parents=True, exist_ok=True)
         self._loop = asyncio.new_event_loop()
+        self.algo: FederatedServerAlgo = None
+        self._state = FederatedLearningState.NONE
+        self._workers: list = []
+        self._params: dict = {}
+        self._rounds: int = 0
+        self._current_round: int = 0
         t = Thread(target=start_background_loop, args=(self._loop,), daemon=True)
         t.start()
 
+    # TODO: How do you reach this endpoint, is this a thing in a federated data-app?
     async def status(self, _: Request) -> web.Response:
+        logger.info("Status requested")
         return web.json_response(
-            data={
+            data = {
                 "rounds": self._rounds,
                 "workers": self._workers,
                 "current_round": self._current_round,
@@ -66,21 +72,45 @@ class FederatedLearningServerHandler:
         )
 
     async def common_model(self, _: Request) -> web.StreamResponse:
-        return web.FileResponse(f"{self._tmp_models}/full_model.json")
+        """Returns complete model once the algorithm is finished. And a status json if not finished."""
+        logger.info("Model requested")
+        # since /status is not apperately reachable after hopping through the data-app,
+        # we have to resort to this....
+        response = None
+        if self.algo and self.algo.get_model_aggregated_data() and self._state == FederatedLearningState.FINISHED:
+            response = web.FileResponse(self.algo.get_model_aggregated_path())
+        else:
+            body_if_not_finished = {
+                "model-status": "not-finished",
+                "model-state": self._state.name 
+            }
+            response = web.Response(status=200, body=json.dumps(body_if_not_finished), content_type='application/json')
+
+        return response
 
     async def initialize(self, request: Request) -> web.Response:
         self._params = await request.json()
         self._workers = self._params.pop("workers")
         self._rounds = self._params["rounds"]
+        self._current_round = 0
         self._state = FederatedLearningState.INITIALIZED
-        self._params = helper_server.initialize(
-            f"{self._tmp_models}/common_model.json", **self._params
-        )
-        self._params["parties"] = len(self._workers)
-        self._params["name"] = f'{self._params["key"]}-cnn-{randrange(100000,999999)}'
-        logger.info("Initialized Federated Learning")
-        logger.info(self._params)
-        asyncio.run_coroutine_threadsafe(self.share_init(), self._loop)
+
+        if self._params.get("algo", None) == "kmeans":
+            self.algo = KmeansFederatedServerAlgo(params=self._params)
+        elif self._params.get("algo", None) == "nn" or self._params.get("algo", None) is None:
+            # researcher-gui does not send 'algo', but it's meant for NN
+            logger.info("Initializing NN Federated Server Algo")
+            self.algo = NNFederatedServerAlgo(params=self._params)
+        else:
+            logger.warning("Unknown algorithm %s", self._params.get('algo', None))
+            return web.Response(status=500)
+
+        logger.info("Initialized Federated Learning for algorithm %s and file %s", self.algo.get_name(), self._params['key'])
+        logger.info("Parameters: %s", self.algo.get_params())
+
+        future = asyncio.run_coroutine_threadsafe(self.share_init(), self._loop)
+        future.add_done_callback(done_callback)
+
         return web.Response()
 
     async def train(self, request: Request) -> web.Response:
@@ -88,59 +118,62 @@ class FederatedLearningServerHandler:
 
         logger.info("Start training")
 
-        asyncio.run_coroutine_threadsafe(self.share_model(), self._loop)
-        return web.Response()
+        future = asyncio.run_coroutine_threadsafe(self.share_model(), self._loop)
+        future.add_done_callback(done_callback)
 
+        return web.Response()
+ 
+    # receive model (raw) from workers
     async def receive_model(self, request: Request) -> web.Response:
         worker = request.headers["Forward-Sender"]
-        file_path = f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.json'
-        with open(file_path, "w+") as f:
-            json.dump("", f)
 
-        async with aiofiles.open(file_path, "a+") as f:
-            # TODO: might need to change something here
-            async for data in request.content.iter_chunked(10240):
-                await json.dump(data, f)
+        num_partials = await self.algo.receive_partial_model(request, worker, self._current_round)
+        logger.info("Received model from %s", worker)
+        logger.info("Partials received so far: %s", num_partials)
 
-        logger.info(f"Received model from {worker}")
-        self._received_models += 1
-        if self._received_models >= len(self._workers):
-            await self.calculate_average()
+        # if we've received all models, aggregate them
+        if num_partials == len(self._workers):
+            logger.info("Received all models, starting aggregation...")
+            await self.aggregate()
+        elif num_partials > len(self._workers):
+            logger.error("Received more models than workers? %s > %s", num_partials, len(self._workers))
 
         return web.Response()
 
+    # shares parameters with worksers with workers
     async def share_init(self) -> None:
+        logger.info("Sharing init parameters with workers")
         async with ClientSession() as session:
             for worker in self._workers:
+                logger.info("Sharing init parameters with %s via %s", worker, f"{data_app_url}/init")
                 async with session.post(
                     f"{data_app_url}/init",
-                    json=self._params,
+                    json=self.algo.get_params(),
                     headers={"Forward-To": worker},
                 ) as response:
                     if response.status > 299:
-                        logger.error(
-                            f"Error in sharing init parameters with {worker}: {response.status}"
-                        )
+                        logger.error("Error in sharing init parameters with %s: %s", worker, response.status)
                     else:
-                        logger.info(
-                            f"Shared init parameters with {worker} successfully"
-                        )
+                        logger.info("Shared init parameters with %s successfully", worker)
 
+    # shares model (raw) with workers, which will in turn receive and start training
     async def share_model(self) -> None:
         self._state = FederatedLearningState.WAITING
+
+        logger.info("Sharing model with workers")
         async with ClientSession() as session:
             for worker in self._workers:
+                logger.info("Sharing model with %s via %s", worker, f"{data_app_url}/model")
                 async with session.post(
                     f"{data_app_url}/model",
-                    data=json.load(open(f"{self._tmp_models}/common_model.json")),
+                    data=self.algo.get_model_aggregated_data(),
                     headers={"Forward-To": worker},
                 ) as response:
+                    logger.info("Received response from %s: %s", worker, response.status)
                     if response.status > 299:
-                        logger.error(
-                            f"Error in sharing model with {worker}: {response.status}"
-                        )
+                        logger.error("Error in sharing model %s with %s: %s", self.algo.get_model_aggregated_path(), worker, response.status)
                     else:
-                        logger.info(f"Shared model with {worker} successfully")
+                        logger.info("Shared model with %s successfully", worker)
 
     async def share_finish(self) -> None:
         self._state = FederatedLearningState.FINISHED
@@ -150,40 +183,39 @@ class FederatedLearningServerHandler:
                     f"{data_app_url}/finish", headers={"Forward-To": worker}
                 ) as response:
                     if response.status > 299:
-                        logger.error(
-                            f"Error in sharing finish signal with {worker}: {response.status}"
-                        )
+                        logger.error("Error in sharing finish signal with %s: %s", worker, response.status)
                     else:
-                        logger.info(f"Shared finish signal with {worker} successfully")
+                        logger.info("Shared finish signal with %s successfully", worker)
 
-    async def calculate_average(self) -> None:
+    async def aggregate(self) -> None:
         self._state = FederatedLearningState.AVERAGING
-        files = [
-            (f'{self._tmp_models}/{self._file_pattern.sub("", worker)}_{self._current_round}.json')
-            for worker in self._workers
-        ]
-        output = f"{self._tmp_models}/common_model.json"
-        full_output = f"{self._tmp_models}/full_model.json"
+        # aggregate(rounds) will return False when the algorithm is finished
+        if self._current_round < self._rounds:
+            finished = self.algo.aggregate(self._current_round)
+        else:
+            logger.info("Reached maximum number of rounds")
+            finished = True
 
-        self._current_round += 1
-        self._received_models = 0
-        logger.info(f"Calculating average of {files} into {output}")
-
-        self._params["change"] = helper_server.average_weights(output, full_output, files, self._params["k"])
-
-        # Stop when maximum number of iterations or convergence criterion is achieved
-        if (self._current_round > self._params["max_iter"]) or (self._params["change"] <= self._params["epsilon"]):
+        if finished:
+            logger.info("Federated Learning finished")
             await self.share_finish()
         else:
+            logger.info("Federated Learning not finished yet, sharing model..")
             await self.share_model()
+
+        self._current_round += 1
 
 
 if __name__ == "__main__":
     # Logging setup
-    FORMAT = "%(asctime)s | %(message)s"
-    logging.basicConfig(format=FORMAT)
-    logger = logging.getLogger("worker")
+    FORMAT = "%(asctime)s - %(name)s | %(message)s"
+    logging.basicConfig(format=FORMAT, level=logging.INFO)
+    logger = logging.getLogger(__name__)
     logger.setLevel(level=logging.DEBUG)
+
+    if os.environ.get("DATA_APP_URL") is None:
+        logger.warning("DATA_APP_URL not set, will use default!")
+    data_app_url = os.environ.get("DATA_APP_URL", "http://localhost:8085")
 
     federated_learning_server_handler = FederatedLearningServerHandler()
 
