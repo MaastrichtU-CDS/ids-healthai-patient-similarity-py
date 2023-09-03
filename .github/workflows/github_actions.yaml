@@ -58,7 +58,7 @@ jobs:
       - name: Build container for not main
         id: docker_build
         uses: docker/build-push-action@v2
-        if: steps.extract_branch.outputs.branch != 'main' && && github.ref_type == 'branch'
+        if: steps.extract_branch.outputs.branch != 'main' && github.ref_type == 'branch'
         with:
           context: ./
           push: true
