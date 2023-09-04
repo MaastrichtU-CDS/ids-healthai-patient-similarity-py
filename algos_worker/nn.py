@@ -17,7 +17,7 @@ logger.setLevel(level=logging.DEBUG)
 
 class NNFederatedWorkerAlgo(FederatedWorkerAlgo):
     def __init__(self, params: dict = {}):
-        self.data: Optional[ndarray] = None #
+        self.data: Optional[ndarray] = None
         self.labels: Optional[ndarray] = None
         self.model: Optional[keras.Model] = None
         self.unique_labels: Optional[int] = None

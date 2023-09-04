@@ -11,6 +11,7 @@ from aiohttp.abc import Request
 
 from algos_server.algo import FederatedServerAlgo
 from algos_server.kmeans import KmeansFederatedServerAlgo
+from algos_server.stats import StatsFederatedServerAlgo
 from algos_server.nn import NNFederatedServerAlgo
 
 
@@ -96,7 +97,11 @@ class FederatedLearningServerHandler:
         self._state = FederatedLearningState.INITIALIZED
 
         if self._params.get("algo", None) == "kmeans":
+            logger.info("Initializing Kmeans Federated Server Algo")
             self.algo = KmeansFederatedServerAlgo(params=self._params)
+        elif self._params.get("algo", None) == "stats":
+            logger.info("Initializing Stats collection")
+            self.algo = StatsFederatedServerAlgo(params=self._params)
         elif self._params.get("algo", None) == "nn" or self._params.get("algo", None) is None:
             # researcher-gui does not send 'algo', but it's meant for NN
             logger.info("Initializing NN Federated Server Algo")

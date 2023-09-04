@@ -13,6 +13,7 @@ from aiohttp.abc import Request
 from algos_worker.algo import FederatedWorkerAlgo
 from algos_worker.kmeans import KmeansFederatedWorkerAlgo
 from algos_worker.nn import NNFederatedWorkerAlgo
+from algos_worker.stats import StatsFederatedWorkerAlgo
 from dataset_handler import DataSetHandler
 
 debug_sleep_time = int(os.environ.get("DEBUG_SLEEP_TIME", "10"))
@@ -61,6 +62,9 @@ class FederatedLearningHandler:
         if self._params.get("algo") == "kmeans":
             logger.info("Initializing Kmeans Federated Learning")
             self.algo = KmeansFederatedWorkerAlgo(params=self._params)
+        elif self._params.get("algo") == "stats":
+            logger.info("Initializing Stats collection")
+            self.algo = StatsFederatedWorkerAlgo(params=self._params)
         else:
             logger.info("Initializing NN Federated Learning")
             self.algo = NNFederatedWorkerAlgo(params=self._params)
