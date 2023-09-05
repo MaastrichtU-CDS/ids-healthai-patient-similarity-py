@@ -78,3 +78,11 @@ jobs:
           context: ./
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPO }}:${{ github.ref_name }}
+      # - name: Build noavx image for tag
+      #   if: github.ref_type == 'tag'
+      #   uses: docker/build-push-action@v2
+      #   with:
+      #     context: ./
+      #     file: ./Dockerfile.noavx
+      #     push: true
+      #     tags: ${{ env.REGISTRY }}/${{ env.REPO }}:${{ github.ref_name }}-noavx

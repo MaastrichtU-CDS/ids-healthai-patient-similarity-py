@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+
+COPY requirements-noavx.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+WORKDIR /app
+COPY . /app
