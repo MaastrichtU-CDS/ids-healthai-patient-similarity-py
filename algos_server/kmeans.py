@@ -60,13 +60,20 @@ class KmeansFederatedServerAlgo(FederatedServerAlgo):
         # filter out any centroid from any center that has NaNs
         X = X[~np.any(np.isnan(X), axis=1)]
 
+        # Read previous centroids
+        centroids = json.load(open(self.model_aggregated_path))['centroids']
+
+        # if there are not enough centroids for the number of clusters, we also use initial centroids
+        # TODO: how incorrect is this?
+        if len(X) < self.k:
+            X = np.vstack([X, centroids])
+            logger.info("Not enough centroids from workers (%s), also using initial centroids", len(X))
+
         # Average centroids by running kmeans on local results
         logger.info('Run global averaging for centroids')
         kmeans = KMeans(n_clusters=self.k, random_state=0).fit(X)
         new_centroids = kmeans.cluster_centers_
 
-        # Read previous centroids
-        centroids = json.load(open(self.model_aggregated_path))['centroids']
 
         # Compute the sum of the magnitudes of the centroids differences
         # between steps. This change in centroids between steps will be used
