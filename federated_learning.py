@@ -17,7 +17,7 @@ from algos_worker.stats import StatsFederatedWorkerAlgo
 from dataset_handler import DataSetHandler
 
 debug_sleep_time = int(os.environ.get("DEBUG_SLEEP_TIME", "10"))
-
+data_app_url = os.environ.get("DATA_APP_URL", "http://localhost:8085")
 
 def start_background_loop(loop: asyncio.AbstractEventLoop) -> None:
     asyncio.set_event_loop(loop)
@@ -133,8 +133,7 @@ if __name__ == "__main__":
     logger.setLevel(level=logging.INFO)
 
     if os.environ.get("DATA_APP_URL") is None:
-        logger.warning("DATA_APP_URL not set, will use default!")
-    data_app_url = os.environ.get("DATA_APP_URL", "http://localhost:8085")
+        logger.warning("DATA_APP_URL not set, will use default: %s", data_app_url)
 
     federated_learning_handler = FederatedLearningHandler()
     dataset_handler = DataSetHandler()
