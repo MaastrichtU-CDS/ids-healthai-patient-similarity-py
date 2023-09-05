@@ -22,6 +22,9 @@ class FederatedServerAlgo(object):
         self.model_aggregated_path = self.models_dir / f"model-aggregated.{self.model_suffix}"
         # keep track of how many partials per round
         self.round_partial_models = defaultdict(list)
+        # validate key is sane filename
+        if not re.match("^[a-zA-Z0-9_.]{1,32}$", params["key"]):
+            raise ValueError("Invalid name for key")
         # params to be shared with workers
         self.params = params
         self.initialize()
