@@ -49,15 +49,16 @@ class KmeansFederatedServerAlgo(FederatedServerAlgo):
 
     def aggregate(self, current_round):
         logger.info("Averaging %s into %s", self.round_partial_models[current_round], self.model_aggregated_path)
-        results = [json.load(open(file))['centroids'] for file in self.round_partial_models[current_round]]
+        workers_centroids = [json.load(open(file))['centroids'] for file in self.round_partial_models[current_round]]
         logger.info("Loaded centroids")
 
         # Organise local centroids into a matrix
-        local_centroids = []
-        for result in results:
-            for local_centroid in result:
-                local_centroids.append(local_centroid)
-        X = np.array(local_centroids)
+        X = np.vstack(workers_centroids)
+        # Note: it can happen that a center had no rows that belonged to a
+        #       particular cluster, we will get a row of NaNs for the newly
+        #       "computed" value of that cluster centroid. So, we:
+        # filter out any centroid from any center that has NaNs
+        X = X[~np.any(np.isnan(X), axis=1)]
 
         # Average centroids by running kmeans on local results
         logger.info('Run global averaging for centroids')
