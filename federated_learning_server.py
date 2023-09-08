@@ -75,18 +75,26 @@ class FederatedLearningServerHandler:
     async def common_model(self, _: Request) -> web.StreamResponse:
         """Returns complete model once the algorithm is finished. And a status json if not finished."""
         logger.info("Model requested")
-        # since /status is not apperately reachable after hopping through the data-app,
-        # we have to resort to this....
         response = None
+        # FIXME: This is kludgy! But since /status is not apperately reachable (from client?)
+        # after hopping through the data-app, we have to resort to this....
+        # .. and because from the client we are POSTing (or due to data-app), I'm unable to get query params through.
+        # .. and headers neither (not even Content-Type)
+        # .. and I can't seem to send headers back either (server -> client)
+        # .. 200..299 status codes seem to end up as 200 on the client
+        # .. but 400..499 do seem to get forwarded to the client (not always mapped to '400')!
+        # .... but nevermind, if it's any 400 it will not let the body through ({'state': self._state.name ...})
+        # ..... code is hard to follow, but it might be here?
+        #       https://gitlab.com/tno-tsg/data-apps/federated-learning/-/blob/master/src/main/java/nl/tno/ids/fl/trusted/TrustedComputeNodeController.kt#L110
+        # OK, I give up, we just say:
+        #   425 means model not ready (code not meant for this, but alas..)
+        #   200 (OK) means model is ready and you get it in the body
+        # [Obviously, this is not how it should be done, but this is a good as we can get without modifying the data-app for now I guess]
         if self.algo and self.algo.get_model_aggregated_data() and self._state == FederatedLearningState.FINISHED:
-            response = web.FileResponse(self.algo.get_model_aggregated_path())
+            response = web.FileResponse(self.algo.get_model_aggregated_path(), status=200)
         else:
-            body_if_not_finished = {
-                "model-status": "not-finished",
-                "model-state": self._state.name 
-            }
-            response = web.Response(status=200, body=json.dumps(body_if_not_finished), content_type='application/json')
-
+            # 'reason' will not make it through data-app...
+            response = web.Response(status=400 + 25, reason="Model not ready yet")
         return response
 
     async def initialize(self, request: Request) -> web.Response:
@@ -227,7 +235,10 @@ if __name__ == "__main__":
     app = web.Application(client_max_size=1024**3)
     app.router.add_post("/initialize", federated_learning_server_handler.initialize)
     app.router.add_post("/train", federated_learning_server_handler.train)
+    # 'post /model' to the data-app of the worker gets results in a POST here
     app.router.add_post("/model", federated_learning_server_handler.receive_model)
-    app.router.add_get("/status", federated_learning_server_handler.status)
+    # 'post /model' to the data-app of the server results in a GET here.
     app.router.add_get("/model", federated_learning_server_handler.common_model)
+    # Unsure how to actually reach this as a client..
+    app.router.add_get("/status", federated_learning_server_handler.status)
     web.run_app(app, host="0.0.0.0", port=8080)
