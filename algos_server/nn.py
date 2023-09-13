@@ -18,8 +18,8 @@ class NNFederatedServerAlgo(FederatedServerAlgo):
         # Doc: "'.h5' suffix causes weights to be saved in HDF5 format."
         # https://www.tensorflow.org/api_docs/python/tf/keras/Model#save_weights
         # Otherwise the path itself won't be created, instead: index and .data-00000-of-00001 files
-        super().__init__(name="nn", params=params, model_suffix="h5")
         self.model: Optional[keras.Model] = None
+        super().__init__(name="nn", params=params, model_suffix="h5")
 
     def initialize(self) -> None:
         model_input = self.params.get("model", None)
