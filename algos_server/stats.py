@@ -14,8 +14,10 @@ class StatsFederatedServerAlgo(FederatedServerAlgo):
 
     def initialize(self):
         # parameters to be passed to the worker
-        self.params["cutoff"] = self.params.get("cutoff", 730)
-        self.params["delta"] = self.params.get("delta", 30)
+        self.cutoff = self.params.get("cutoff", 730)
+        self.params["cutoff"] = self.cutoff
+        self.delta = self.params.get("delta", 30)
+        self.params["delta"] = self.delta
         logger.debug("Parameters to be passed to the worker have been initialized: %s", self.params)
 
         # we definately don't need an initial model for this algorithm but
@@ -32,7 +34,12 @@ class StatsFederatedServerAlgo(FederatedServerAlgo):
             json.load(open(file))
             for file in self.round_partial_models[current_round]
         ]
-        logger.info("Concatenated %s partial results", len(aggregated_results))
+        aggregated_results = {
+            "results": aggregated_results,
+            "delta": self.delta,
+            "cutoff": self.cutoff,
+        }
+        logger.info("Concatenated %s partial results", len(aggregated_results["results"]))
         logger.info("Saving final compiled stats")
         with open(self.model_aggregated_path, "w+") as f:
             json.dump(aggregated_results, f)
